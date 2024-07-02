@@ -54,7 +54,7 @@ public class GalaxyApiDemo {
         waitUntilDatasetReady(output.getId());
 
         String downloadHttp = galaxyURL + "api/datasets/" + output.getId()
-                + "/display?to_ext=csv?key=" + apiKey;
+                + "/display?to_ext=csv&key=" + apiKey;
 
         // String downloadHttp = galaxyURL + "api/datasets/4905136d3f9149da/display?preview=false&raw=false&key=" + apiKey;
         URL url = new URL(downloadHttp);
