@@ -18,6 +18,7 @@ import java.net.HttpURLConnection;
 import java.net.URL;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.Paths;
 import java.nio.file.StandardCopyOption;
 import java.util.HashMap;
 
@@ -27,36 +28,40 @@ import java.util.HashMap;
  */
 public class GalaxyApiDemo {
 
-    static GalaxyInstance galaxyInstance;
-    static String galaxyURL = "https://test.galaxyproject.org/";
-    static String apiKey = "cdcfdc5cbbce3273c1786fc8002b80f9";
-    static String TOOL_NAME = "Sort";
-    static History myHistory;
+    static final String GALAXY_URL = "https://test.galaxyproject.org/";
+    static final String TOOL_NAME = "Sort";
+    static final String LOCAL_FILE_NAME = "20240703_top80_german_cities.csv";
+    static final String HISTORY_NAME = "myHistory";
 
     public static void main(String[] args) throws Exception {
-        galaxyInstance = GalaxyInstanceFactory.get(galaxyURL, apiKey);
-        myHistory = getMyHistory();
-        ToolDataClient dataClient
-                = galaxyInstance.getToolDataClient();
+        //Connect to Galaxy instance
+        String apiKey = Files.readString(Paths.get("src/main/resources/api-key.txt"));
+        GalaxyInstance galaxyInstance = GalaxyInstanceFactory.get(GALAXY_URL, apiKey);
+        //Get history to work in
+        History myHistory = getMyHistory(galaxyInstance);
 
-        String datasetId = uploadDataSet(myHistory);
-        Dataset dataset
-                = waitUntilDatasetReady(datasetId);
-        Tool histoGrammTool
-                = getHistogrammTool();
-        ToolInputs inputs = new ToolInputs(histoGrammTool.getId(), new HashMap<>());
-        //inputs.getInputs().put("input1", "30");
+        String datasetId = uploadDataSet(myHistory, galaxyInstance);
+
+        Dataset dataset = waitUntilDatasetReady(datasetId, galaxyInstance, myHistory.getId());
+
+        Tool tool = getHistogrammTool(galaxyInstance);
+
+        ToolInputs inputs = new ToolInputs(tool.getId(), new HashMap<>());
+
         inputs.getInputs().put("input1", String.valueOf(dataset.getHid()));
-        //inputs.getInputs().put("numerical_column", "1"); OutputDataset
+        inputs.getInputs().put("style", "num");
+        inputs.getInputs().put("order", "ASC");
+        inputs.getInputs().put("column", "2");
+       // inputs.getInputs().put("header_lines", "0");
+
         OutputDataset output = galaxyInstance.getToolsClient().create(myHistory,
                 inputs).getOutputs().get(0);
 
-        waitUntilDatasetReady(output.getId());
+        waitUntilDatasetReady(output.getId(), galaxyInstance, myHistory.getId());
 
-        String downloadHttp = galaxyURL + "api/datasets/" + output.getId()
+        String downloadHttp = GALAXY_URL + "api/datasets/" + output.getId()
                 + "/display?to_ext=csv&key=" + apiKey;
 
-        // String downloadHttp = galaxyURL + "api/datasets/4905136d3f9149da/display?preview=false&raw=false&key=" + apiKey;
         URL url = new URL(downloadHttp);
         HttpURLConnection con = (HttpURLConnection) url.openConnection();
         con.setRequestMethod("GET");
@@ -64,19 +69,17 @@ public class GalaxyApiDemo {
         Files.copy(responseStream, Path.of("./response.csv"), StandardCopyOption.REPLACE_EXISTING);
     }
 
-    public static History getMyHistory() {
+    public static History getMyHistory(GalaxyInstance galaxyInstance) {
         HistoriesClient historyClient = galaxyInstance.getHistoriesClient();
-
-        History myHistory = null;
         for (History h : historyClient.getHistories()) {
-            if (h.getName().equals("myHistory")) {
-                myHistory = h;
+            if (h.getName().equals(HISTORY_NAME)) {
+                return h;
             }
         }
-        return myHistory;
+        throw new RuntimeException("No history with name " + HISTORY_NAME + "found");
     }
 
-    public static Tool getHistogrammTool() {
+    public static Tool getHistogrammTool(GalaxyInstance galaxyInstance) {
         for (ToolSection t : galaxyInstance.getToolsClient().getTools()) {
             if (t.getName() == null) {
                 continue;
@@ -93,18 +96,18 @@ public class GalaxyApiDemo {
         throw new RuntimeException("Tool was not found");
     }
 
-    public static String uploadDataSet(History myHistory) {
+    public static String uploadDataSet(History myHistory, GalaxyInstance galaxyInstance) {
         // create Galaxy Library
-        File fileToUpload = new File("C:\\Users\\fmauz\\Downloads\\top80_german_cities.csv");
+        File fileToUpload = new File("src/main/resources/" + LOCAL_FILE_NAME);
         ToolsClient.FileUploadRequest upload = new ToolsClient.FileUploadRequest(myHistory.getId(), fileToUpload);
         ToolExecution execution = galaxyInstance.getToolsClient().upload(upload);
         return execution.getOutputs().get(0).getId();
     }
 
-    public static Dataset waitUntilDatasetReady(String datasetId) throws InterruptedException {
+    public static Dataset waitUntilDatasetReady(String datasetId, GalaxyInstance galaxyInstance, String historyId) throws InterruptedException {
         Dataset dataset;
         do {
-            dataset = galaxyInstance.getHistoriesClient().showDataset(myHistory.getId(), datasetId);
+            dataset = galaxyInstance.getHistoriesClient().showDataset(historyId, datasetId);
             System.out.println(dataset.getState());
             Thread.sleep(1000);
         } while (!dataset.getState().equals("ok"));
