@@ -37,36 +37,52 @@ public class GalaxyApiDemo {
         //Connect to Galaxy instance
         String apiKey = Files.readString(Paths.get("src/main/resources/api-key.txt"));
         GalaxyInstance galaxyInstance = GalaxyInstanceFactory.get(GALAXY_URL, apiKey);
+
         //Get history to work in
         History myHistory = getMyHistory(galaxyInstance);
 
+        //Trigger dataset upload
         String datasetId = uploadDataSet(myHistory, galaxyInstance);
 
+        //Wait until dataset is processed at galaxy
         Dataset dataset = waitUntilDatasetReady(datasetId, galaxyInstance, myHistory.getId());
 
-        Tool tool = getHistogrammTool(galaxyInstance);
+        //Get the sorting tool
+        Tool tool = getSortTool(galaxyInstance);
 
-        ToolInputs inputs = new ToolInputs(tool.getId(), new HashMap<>());
+        //Define the inputs of the tool
+        ToolInputs inputs = prepareInputParameter(tool, dataset);
 
-        inputs.getInputs().put("input1", String.valueOf(dataset.getHid()));
-        inputs.getInputs().put("style", "num");
-        inputs.getInputs().put("order", "ASC");
-        inputs.getInputs().put("column", "2");
-       // inputs.getInputs().put("header_lines", "0");
+        //Trigger the job/tool and get the created dataset (not processed at that moment)
+        OutputDataset output = galaxyInstance
+                .getToolsClient()
+                .create(myHistory, inputs)
+                .getOutputs()
+                .get(0);
 
-        OutputDataset output = galaxyInstance.getToolsClient().create(myHistory,
-                inputs).getOutputs().get(0);
-
+        //Wait until dataset is processed at galaxy
         waitUntilDatasetReady(output.getId(), galaxyInstance, myHistory.getId());
 
-        String downloadHttp = GALAXY_URL + "api/datasets/" + output.getId()
+        
+        //Download the finished dataset. I do not use the java API here but use 
+        //the direct http call to for demonstration purpose.
+        String downloadHttpUrl = GALAXY_URL + "api/datasets/" + output.getId()
                 + "/display?to_ext=csv&key=" + apiKey;
 
-        URL url = new URL(downloadHttp);
+        URL url = new URL(downloadHttpUrl);
         HttpURLConnection con = (HttpURLConnection) url.openConnection();
         con.setRequestMethod("GET");
         InputStream responseStream = con.getInputStream();
         Files.copy(responseStream, Path.of("./response.csv"), StandardCopyOption.REPLACE_EXISTING);
+    }
+
+    private static ToolInputs prepareInputParameter(Tool tool, Dataset dataset) {
+        ToolInputs inputs = new ToolInputs(tool.getId(), new HashMap<>());
+        inputs.getInputs().put("input1", String.valueOf(dataset.getHid()));
+        inputs.getInputs().put("style", "num");
+        inputs.getInputs().put("order", "ASC");
+        inputs.getInputs().put("column", "1");
+        return inputs;
     }
 
     public static History getMyHistory(GalaxyInstance galaxyInstance) {
@@ -79,7 +95,7 @@ public class GalaxyApiDemo {
         throw new RuntimeException("No history with name " + HISTORY_NAME + "found");
     }
 
-    public static Tool getHistogrammTool(GalaxyInstance galaxyInstance) {
+    public static Tool getSortTool(GalaxyInstance galaxyInstance) {
         for (ToolSection t : galaxyInstance.getToolsClient().getTools()) {
             if (t.getName() == null) {
                 continue;
